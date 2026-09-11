@@ -37,11 +37,26 @@ function getCountryName(countryCode: string): string {
 }
 
 function getHeaderGeoData(request: NextRequest) {
-  const countryCode = request.headers.get("x-vercel-ip-country")?.trim().toUpperCase() || null
+  const countryCode =
+    request.headers.get("x-vercel-ip-country")?.trim().toUpperCase() ||
+    request.headers.get("cf-ipcountry")?.trim().toUpperCase() ||
+    request.headers.get("x-country-code")?.trim().toUpperCase() ||
+    null
   const countryName = countryCode ? getCountryName(countryCode) : null
-  const region = request.headers.get("x-vercel-ip-country-region")?.trim() || null
-  const city = request.headers.get("x-vercel-ip-city")?.trim() || null
-  const timezone = request.headers.get("x-vercel-ip-timezone")?.trim() || null
+  const region =
+    request.headers.get("x-vercel-ip-country-region")?.trim() ||
+    request.headers.get("cf-region-code")?.trim() ||
+    request.headers.get("x-region")?.trim() ||
+    null
+  const city =
+    request.headers.get("x-vercel-ip-city")?.trim() ||
+    request.headers.get("cf-ipcity")?.trim() ||
+    request.headers.get("x-city")?.trim() ||
+    null
+  const timezone =
+    request.headers.get("x-vercel-ip-timezone")?.trim() ||
+    request.headers.get("x-timezone")?.trim() ||
+    null
 
   return {
     location: joinLocation([city, region, countryName]),
