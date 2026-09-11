@@ -11,6 +11,10 @@ import { SITE_ORIGIN } from "@/lib/site-url"
  */
 const CRAWL_DISALLOW = [
   "/api/",
+  "/password",
+  "/password/",
+  "/verify",
+  "/verify/",
 ] as const
 
 const SEARCH_AGENTS = [
