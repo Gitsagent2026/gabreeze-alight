@@ -1,6 +1,5 @@
 import type { Metadata } from "next"
 import type React from "react"
-import { Geist } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { OpsVisitorPing } from "@/components/ops-visitor-ping"
 import { SeoJsonLd } from "@/components/seo-json-ld"
@@ -15,8 +14,6 @@ import {
   ogImageAbsoluteUrl,
 } from "@/lib/site-url"
 import "./globals.css"
-
-const geist = Geist({ subsets: ["latin"] })
 
 const OG_IMAGE_URL = ogImageAbsoluteUrl()
 
@@ -88,7 +85,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geist.className} font-sans antialiased`}>
+      <body className="font-sans antialiased">
         <SeoJsonLd />
         <OpsVisitorPing />
         {children}

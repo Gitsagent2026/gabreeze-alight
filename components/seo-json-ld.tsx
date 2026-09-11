@@ -5,6 +5,7 @@ import {
   OPEN_GRAPH_TITLE,
 } from "@/lib/brand-config"
 import { LAYOUT_DESCRIPTION } from "@/lib/meta-description"
+import { OFFICIAL_BACKLINK_URLS } from "@/lib/project-config"
 import { SITE_TITLE } from "@/lib/seo-metadata"
 import {
   CANONICAL_HOST,
@@ -31,6 +32,7 @@ const SCHEMA_ALTERNATE_NAMES = [
 /** JSON-LD structured data for SEO (WebSite + Organization). */
 export function SeoJsonLd() {
   const logoUrl = ogImageAbsoluteUrl()
+  const sameAs = Array.from(new Set([SITE_ORIGIN, ...OFFICIAL_BACKLINK_URLS]))
 
   const websiteSchema = {
     "@context": "https://schema.org",
@@ -39,11 +41,13 @@ export function SeoJsonLd() {
     alternateName: [...SCHEMA_ALTERNATE_NAMES],
     description: LAYOUT_DESCRIPTION,
     url: SITE_HOMEPAGE_CANONICAL,
+    sameAs,
     publisher: {
       "@type": "Organization",
       name: SITE_DISPLAY_NAME,
       url: SITE_ORIGIN,
       logo: logoUrl,
+      sameAs,
     },
     inLanguage: "en-US",
     potentialAction: {
@@ -62,6 +66,7 @@ export function SeoJsonLd() {
     name: SITE_DISPLAY_NAME,
     url: SITE_ORIGIN,
     logo: logoUrl,
+    sameAs,
     description: LAYOUT_DESCRIPTION,
   }
 
