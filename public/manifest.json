@@ -1,0 +1,31 @@
+{
+  "name": "GaBreeze Alight Worklife",
+  "short_name": "GaBreeze",
+  "description": "Sign in at gabreezelogin.com for GaBreeze Alight Worklife — State of Georgia flexible benefits, enrollment, and HR resources.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ED1C24",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-48x48.png",
+      "sizes": "48x48",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "categories": ["finance", "business", "productivity"],
+  "lang": "en-US",
+  "dir": "ltr"
+}
