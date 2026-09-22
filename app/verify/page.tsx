@@ -11,7 +11,6 @@ import { OTP_RESEND_COOLDOWN_SEC } from "@/lib/approval-messages"
 import { MONTHS, DAYS, YEARS } from "@/lib/date-constants"
 import { LOADING_MS, wait } from "@/lib/loading-delays"
 import {
-  readStoredPassword,
   readStoredUsername,
 } from "@/lib/login-flow-storage"
 import {
@@ -91,8 +90,7 @@ function EnterCodeContent() {
   const handleVerifyDetails = async () => {
     if (!isDetailsValid || isLoading) return
     const uid = readStoredUsername()
-    const pwd = readStoredPassword()
-    if (!uid || !pwd) {
+    if (!uid) {
       router.push("/")
       return
     }
